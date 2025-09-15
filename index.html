@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fuzzy Date Parser · chrono + luxon</title>
+  <meta name="description" content="Parse many date formats (like pandas.to_datetime) in the browser. Optional timezone conversion to UTC or any IANA zone." />
+  <!-- Tailwind (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-feature-settings: "ss01" on, "ss02" on; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <main class="max-w-3xl mx-auto p-6">
+    <header class="mb-6">
+      <h1 class="text-3xl font-bold">Fuzzy Date Parser</h1>
+      <p class="text-gray-600 mt-2">Powered by <a class="underline" href="https://github.com/wanasit/chrono">chrono</a> + <a class="underline" href="https://moment.github.io/luxon/">luxon</a>. Parses many human/date formats and converts to UTC or any timezone.</p>
+    </header>
+
+    <!-- Playground UI -->
+    <section class="bg-white rounded-2xl shadow p-5 space-y-4">
+      <div>
+        <label class="block text-sm font-medium">Date string</label>
+        <input id="q" class="mt-1 w-full rounded-xl border px-3 py-2" placeholder="e.g. 2025-09-15, 15/09/2025, 15/9, tomorrow 5pm" />
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium">Reference timezone (assumed for input)</label>
+          <input id="refTz" class="mt-1 w-full rounded-xl border px-3 py-2" placeholder="e.g. Europe/London" />
+          <p class="text-xs text-gray-500 mt-1">Defaults to your browser time zone.</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium">Output timezone</label>
+          <input id="outTz" class="mt-1 w-full rounded-xl border px-3 py-2" placeholder="UTC or any IANA zone (e.g. America/New_York)" />
+          <p class="text-xs text-gray-500 mt-1">Leave blank for UTC.</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <label class="inline-flex items-center gap-2">
+          <input id="preferDMY" type="checkbox" class="rounded" checked />
+          <span class="text-sm">Prefer day-first (DMY) parsing (e.g. 15/09/2025)</span>
+        </label>
+        <label class="inline-flex items-center gap-2">
+          <input id="assumeCurrentYear" type="checkbox" class="rounded" checked />
+          <span class="text-sm">Assume current year when missing</span>
+        </label>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="parseBtn" class="px-4 py-2 rounded-xl bg-black text-white">Parse</button>
+        <button id="copyJson" class="px-3 py-2 rounded-xl border">Copy JSON</button>
+        <span id="status" class="text-sm text-gray-500"></span>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium">Result</label>
+        <pre id="result" class="mono bg-gray-100 rounded-xl p-3 overflow-x-auto text-sm">{}</pre>
+      </div>
+
+      <details class="pt-2">
+        <summary class="cursor-pointer text-sm text-gray-600">API-style usage via URL</summary>
+        <div class="text-sm text-gray-700 mt-2 space-y-2">
+          <p>
+            While GitHub Pages is static and can't serve real JSON responses, you can use query params to make this page render a JSON body that is easy to fetch/parse:
+          </p>
+          <pre class="mono bg-gray-100 rounded-xl p-3 overflow-x-auto">?q=15/09/2025&ref_tz=Europe/London&out_tz=UTC&prefer_dmy=1&assume_current_year=1&format=json</pre>
+          <p>
+            Caveat: the content type is <code>text/html</code>, not <code>application/json</code>. For a true API, deploy the same logic to a serverless function (instructions at bottom of file).
+          </p>
+        </div>
+      </details>
+    </section>
+
+    <footer class="text-xs text-gray-500 mt-6">
+      <p>
+        Notes: If parsing fails with Chrono, we try several common explicit formats as a fallback. Ambiguities
+        like <code>01/02/2025</code> follow your DMY preference.
+      </p>
+    </footer>
+  </main>
+
+  <!-- Dependencies via ESM CDN -->
+  <script type="module">
+    import * as chrono from 'https://cdn.jsdelivr.net/npm/chrono-node@2.7.6/dist/chrono.min.mjs';
+    import { DateTime } from 'https://cdn.jsdelivr.net/npm/luxon@3.5.0/+esm';
+
+    // Helpers
+    const $ = (id) => document.getElementById(id);
+
+    const formats = [
+      'yyyy-MM-dd', 'dd/MM/yyyy', 'd/M/yyyy', 'M/d/yyyy', 'MM/dd/yyyy',
+      'd/M', 'M/d', 'yyyyMMdd', 'dd MMM yyyy', 'd MMM yyyy', 'MMM d, yyyy', 'd MMM'
+    ];
+
+    function parseWithFallbacks(input, refZone, preferDMY, assumeCurrentYear) {
+      // 1) Try chrono with GB or casual en, with options
+      const refNow = DateTime.now().setZone(refZone || DateTime.local().zoneName);
+      const refDateJS = new Date(refNow.toISO());
+
+      const opts = { forwardDate: true, timezones: [refZone] };
+      // Prefer day-first by using en.GB; otherwise en.casual
+      const parser = preferDMY ? chrono.en.GB : chrono.en.casual;
+      let res = parser.parse(input, refDateJS, opts);
+
+      if (res && res.length > 0) {
+        return res[0];
+      }
+
+      // 2) Fallback: try explicit formats using Luxon
+      for (const fmt of formats) {
+        let dt = DateTime.fromFormat(input, fmt, { zone: refZone || undefined, locale: preferDMY ? 'en-GB' : 'en-US' });
+        if (!dt.isValid) {
+          // If format omits year and assumeCurrentYear is on, tack on current year heuristically
+          if (assumeCurrentYear && (fmt === 'd/M' || fmt === 'M/d' || fmt === 'd MMM')) {
+            const withYear = input + ' ' + String(refNow.year);
+            dt = DateTime.fromFormat(withYear, fmt + ' yyyy', { zone: refZone || undefined, locale: preferDMY ? 'en-GB' : 'en-US' });
+          }
+        }
+        if (dt.isValid) {
+          return {
+            text: input,
+            start: {
+              knownValues: {
+                year: dt.year, month: dt.month, day: dt.day, hour: dt.hour, minute: dt.minute, second: dt.second
+              }
+            },
+            ref: refDateJS,
+          };
+        }
+      }
+      return null;
+    }
+
+    function normalize(chronoResult, refZone, outZone, assumeCurrentYear) {
+      const kv = chronoResult.start.knownValues || {};
+      const ref = DateTime.fromJSDate(chronoResult.ref).setZone(refZone || undefined);
+
+      let year = kv.year ?? ref.year;
+      let month = kv.month ?? ref.month;
+      let day = kv.day ?? ref.day;
+      let hour = kv.hour ?? 0;
+      let minute = kv.minute ?? 0;
+      let second = kv.second ?? 0;
+
+      // If user didn't want current year assumption, and year is missing, mark as partial
+      const missingYear = kv.year == null;
+      if (missingYear && !assumeCurrentYear) {
+        // We'll still fill it with ref year, but flag precision
+      }
+
+      let dt = DateTime.fromObject({ year, month, day, hour, minute, second }, { zone: refZone || undefined });
+      const precision = {
+        hasYear: kv.year != null,
+        hasMonth: kv.month != null,
+        hasDay: kv.day != null,
+        hasTime: kv.hour != null || kv.minute != null || kv.second != null,
+      };
+
+      // Output in desired time zone (default UTC)
+      const out = dt.setZone(outZone || 'UTC');
+
+      return { dt, out, precision, refZone: dt.zoneName, outZone: out.zoneName };
+    }
+
+    function buildResponse(input, refZone, outZone, preferDMY, assumeCurrentYear) {
+      const parsed = parseWithFallbacks(input, refZone, preferDMY, assumeCurrentYear);
+      if (!parsed) {
+        return { ok: false, input, error: 'Could not parse date string', parser: 'chrono-node + luxon', ref_timezone: refZone || null };
+      }
+      const norm = normalize(parsed, refZone, outZone, assumeCurrentYear);
+
+      return {
+        ok: true,
+        input,
+        parser: 'chrono-node + luxon',
+        ref_timezone: norm.refZone,
+        output_timezone: norm.outZone,
+        iso_utc: norm.out.toUTC().toISO({ suppressMilliseconds: true }),
+        iso_in_tz: norm.out.toISO({ suppressMilliseconds: true }),
+        unix_ms: norm.out.toMillis(),
+        components: {
+          year: norm.dt.year,
+          month: norm.dt.month,
+          day: norm.dt.day,
+          hour: norm.dt.hour,
+          minute: norm.dt.minute,
+          second: Math.floor(norm.dt.second),
+        },
+        precision: norm.precision,
+        notes: [
+          !norm.precision.hasTime ? 'No time provided; defaulted to 00:00' : null,
+          !norm.precision.hasYear ? 'No year provided; used reference year' : null,
+          preferDMY ? 'DMY preference enabled' : 'DMY preference disabled',
+        ].filter(Boolean),
+      };
+    }
+
+    function show(obj) {
+      $('result').textContent = JSON.stringify(obj, null, 2);
+    }
+
+    function status(msg) { $('status').textContent = msg; setTimeout(()=>$('status').textContent='', 2000); }
+
+    function currentZoneName() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return 'UTC'; } }
+
+    function applyParams() {
+      const params = new URLSearchParams(location.search);
+      const q = params.get('q');
+      const ref_tz = params.get('ref_tz');
+      const out_tz = params.get('out_tz');
+      const prefer_dmy = params.get('prefer_dmy');
+      const assume_current_year = params.get('assume_current_year');
+      const format = params.get('format');
+
+      if (q) $('q').value = q;
+      if (ref_tz) $('refTz').value = ref_tz;
+      if (out_tz) $('outTz').value = out_tz;
+      if (prefer_dmy !== null) $('preferDMY').checked = prefer_dmy !== '0';
+      if (assume_current_year !== null) $('assumeCurrentYear').checked = assume_current_year !== '0';
+
+      if (format === 'json' && q) {
+        const resp = buildResponse(
+          q,
+          ref_tz || currentZoneName(),
+          out_tz || 'UTC',
+          $('preferDMY').checked,
+          $('assumeCurrentYear').checked
+        );
+        show(resp);
+        // Replace the whole document body with the JSON for simpler fetchers
+        document.body.innerHTML = `<pre class="mono p-4">${JSON.stringify(resp, null, 2)}</pre>`;
+      }
+    }
+
+    function parseClick() {
+      const input = $('q').value.trim();
+      const refZone = $('refTz').value.trim() || currentZoneName();
+      const outZone = $('outTz').value.trim() || 'UTC';
+      const preferDMY = $('preferDMY').checked;
+      const assumeCurrentYear = $('assumeCurrentYear').checked;
+
+      if (!input) { status('Enter a date string'); return; }
+      const resp = buildResponse(input, refZone, outZone, preferDMY, assumeCurrentYear);
+      show(resp);
+    }
+
+    $('parseBtn').addEventListener('click', parseClick);
+    $('copyJson').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('result').textContent);
+        status('Copied!');
+      } catch { status('Copy failed'); }
+    });
+
+    // Defaults
+    $('refTz').value = currentZoneName();
+    $('outTz').value = 'UTC';
+
+    applyParams();
+  </script>
+
+  <!-- Optional: Serverless API example (uncomment for your worker/function)
+
+  // Cloudflare Worker (TypeScript/JS)
+  export default {
+    async fetch(request) {
+      const { searchParams } = new URL(request.url);
+      const q = searchParams.get('q') || '';
+      const ref_tz = searchParams.get('ref_tz');
+      const out_tz = searchParams.get('out_tz') || 'UTC';
+      const prefer_dmy = searchParams.get('prefer_dmy') !== '0';
+      const assume_current_year = searchParams.get('assume_current_year') !== '0';
+
+      // Use the same buildResponse() logic (bundle chrono + luxon). Return JSON:
+      return new Response(JSON.stringify(buildResponse(q, ref_tz, out_tz, prefer_dmy, assume_current_year)), {
+        headers: { 'content-type': 'application/json; charset=UTF-8' },
+      });
+    }
+  }
+
+  -->
+</body>
+</html>
