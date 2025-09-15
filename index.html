@@ -86,10 +86,9 @@
 
   <!-- Dependencies via ESM CDN -->
   <script type="module">
-    import * as chrono from 'https://cdn.jsdelivr.net/npm/chrono-node@2.7.6/+esm';
+    import * as chrono from 'https://esm.sh/chrono-node@2.7.6';
     import { DateTime } from 'https://cdn.jsdelivr.net/npm/luxon@3.5.0/+esm';
 
-    // Helpers
     const $ = (id) => document.getElementById(id);
 
     const formats = [
@@ -98,12 +97,10 @@
     ];
 
     function parseWithFallbacks(input, refZone, preferDMY, assumeCurrentYear) {
-      // 1) Try chrono with GB or casual en, with options
       const refNow = DateTime.now().setZone(refZone || DateTime.local().zoneName);
       const refDateJS = new Date(refNow.toISO());
 
       const opts = { forwardDate: true, timezones: [refZone] };
-      // Prefer day-first by using en.GB; otherwise en.casual
       const parser = preferDMY ? chrono.en.GB : chrono.en.casual;
       let res = parser.parse(input, refDateJS, opts);
 
@@ -111,11 +108,9 @@
         return res[0];
       }
 
-      // 2) Fallback: try explicit formats using Luxon
       for (const fmt of formats) {
         let dt = DateTime.fromFormat(input, fmt, { zone: refZone || undefined, locale: preferDMY ? 'en-GB' : 'en-US' });
         if (!dt.isValid) {
-          // If format omits year and assumeCurrentYear is on, tack on current year heuristically
           if (assumeCurrentYear && (fmt === 'd/M' || fmt === 'M/d' || fmt === 'd MMM')) {
             const withYear = input + ' ' + String(refNow.year);
             dt = DateTime.fromFormat(withYear, fmt + ' yyyy', { zone: refZone || undefined, locale: preferDMY ? 'en-GB' : 'en-US' });
@@ -147,24 +142,29 @@
       let minute = kv.minute ?? 0;
       let second = kv.second ?? 0;
 
-      // If user didn't want current year assumption, and year is missing, mark as partial
       const missingYear = kv.year == null;
       if (missingYear && !assumeCurrentYear) {
-        // We'll still fill it with ref year, but flag precision
       }
 
-      let dt = DateTime.fromObject({ year, month, day, hour, minute, second }, { zone: refZone || undefined });
+      // If no time part, ignore timezone shifts (treat as date-only at 00:00 local, then keep as same date in output)
+      const hasTime = kv.hour != null || kv.minute != null || kv.second != null;
+      let dt;
+      if (hasTime) {
+        dt = DateTime.fromObject({ year, month, day, hour, minute, second }, { zone: refZone || undefined });
+      } else {
+        dt = DateTime.fromObject({ year, month, day, hour:0, minute:0, second:0 }, { zone: 'UTC' });
+      }
+
       const precision = {
         hasYear: kv.year != null,
         hasMonth: kv.month != null,
         hasDay: kv.day != null,
-        hasTime: kv.hour != null || kv.minute != null || kv.second != null,
+        hasTime: hasTime,
       };
 
-      // Output in desired time zone (default UTC)
-      const out = dt.setZone(outZone || 'UTC');
+      const out = hasTime ? dt.setZone(outZone || 'UTC') : dt; // don't shift pure dates
 
-      return { dt, out, precision, refZone: dt.zoneName, outZone: out.zoneName };
+      return { dt, out, precision, refZone: dt.zoneName, outZone: hasTime ? out.zoneName : 'UTC' };
     }
 
     function buildResponse(input, refZone, outZone, preferDMY, assumeCurrentYear) {
@@ -193,7 +193,7 @@
         },
         precision: norm.precision,
         notes: [
-          !norm.precision.hasTime ? 'No time provided; defaulted to 00:00' : null,
+          !norm.precision.hasTime ? 'No time provided; defaulted to 00:00 and treated as date-only (no timezone shift)' : null,
           !norm.precision.hasYear ? 'No year provided; used reference year' : null,
           preferDMY ? 'DMY preference enabled' : 'DMY preference disabled',
         ].filter(Boolean),
@@ -232,7 +232,6 @@
           $('assumeCurrentYear').checked
         );
         show(resp);
-        // Replace the whole document body with the JSON for simpler fetchers
         document.body.innerHTML = `<pre class="mono p-4">${JSON.stringify(resp, null, 2)}</pre>`;
       }
     }
@@ -257,32 +256,10 @@
       } catch { status('Copy failed'); }
     });
 
-    // Defaults
     $('refTz').value = currentZoneName();
     $('outTz').value = 'UTC';
 
     applyParams();
   </script>
-
-  <!-- Optional: Serverless API example (uncomment for your worker/function)
-
-  // Cloudflare Worker (TypeScript/JS)
-  export default {
-    async fetch(request) {
-      const { searchParams } = new URL(request.url);
-      const q = searchParams.get('q') || '';
-      const ref_tz = searchParams.get('ref_tz');
-      const out_tz = searchParams.get('out_tz') || 'UTC';
-      const prefer_dmy = searchParams.get('prefer_dmy') !== '0';
-      const assume_current_year = searchParams.get('assume_current_year') !== '0';
-
-      // Use the same buildResponse() logic (bundle chrono + luxon). Return JSON:
-      return new Response(JSON.stringify(buildResponse(q, ref_tz, out_tz, prefer_dmy, assume_current_year)), {
-        headers: { 'content-type': 'application/json; charset=UTF-8' },
-      });
-    }
-  }
-
-  -->
 </body>
 </html>
