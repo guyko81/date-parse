@@ -11,6 +11,7 @@
     body { font-feature-settings: "ss01" on, "ss02" on; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
   </style>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='12'%3E%F0%9F%97%93%EF%B8%8F%3C/text%3E%3C/svg%3E" />
 </head>
 <body class="bg-gray-50 text-gray-900">
   <main class="max-w-3xl mx-auto p-6">
@@ -85,7 +86,7 @@
 
   <!-- Dependencies via ESM CDN -->
   <script type="module">
-    import * as chrono from 'https://cdn.jsdelivr.net/npm/chrono-node@2.7.6/dist/chrono.min.mjs';
+    import * as chrono from 'https://cdn.jsdelivr.net/npm/chrono-node@2.7.6/+esm';
     import { DateTime } from 'https://cdn.jsdelivr.net/npm/luxon@3.5.0/+esm';
 
     // Helpers
