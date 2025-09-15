@@ -21,7 +21,7 @@ def has_time_part(s: str) -> bool:
             return True
         except Exception:
             pass
-    return False
+    return True
 
 def normalize_date_only(dt: datetime) -> datetime:
     # Return midnight UTC with the same Y-M-D (no shift)
