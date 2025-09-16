@@ -115,8 +115,10 @@ def parse_endpoint():
     prefer_dmy = request.args.get("prefer_dmy", "1") != "0"     # default true
     assume_current_year = request.args.get("assume_current_year", "1") != "0"
 
-    res = build_response(q, ref_tz, out_tz, prefer_dmy, assume_current_year)
-    return jsonify(res)
+    result, err = build_response(q, ref_tz, out_tz, prefer_dmy, assume_current_year)
+    if err:
+        return jsonify(err), 400
+    return jsonify(result)
 
 @app.post("/format")
 def format_endpoint():
