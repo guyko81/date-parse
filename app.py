@@ -107,6 +107,17 @@ def _set_by_path(obj, path, value):
         cur = cur[p]
     cur[parts[-1]] = value
 
+@app.get("/parse")
+def parse_endpoint():
+    q = request.args.get("q", "")
+    ref_tz = request.args.get("ref_tz")  # e.g. Europe/London
+    out_tz = request.args.get("out_tz") or "UTC"
+    prefer_dmy = request.args.get("prefer_dmy", "1") != "0"     # default true
+    assume_current_year = request.args.get("assume_current_year", "1") != "0"
+
+    res = build_response(q, ref_tz, out_tz, prefer_dmy, assume_current_year)
+    return jsonify(res)
+
 @app.post("/format")
 def format_endpoint():
     payload = request.get_json(force=True, silent=True) or {}
