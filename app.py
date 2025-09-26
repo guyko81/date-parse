@@ -29,6 +29,23 @@ def normalize_date_only(dt: datetime) -> datetime:
 def parse_fuzzy(q: str, prefer_dmy: bool, assume_current_year: bool, ref_tz: str | None):
     if not q or not q.strip():
         return None
+    s = q.strip()
+
+    # 1) Strict ISO date-only: always Y-M-D, never flip month/day
+    if ISO_DATE_ONLY.match(s):
+        try:
+            return datetime.fromisoformat(s)
+        except Exception:
+            pass
+
+    # 2) ISO datetime: prefer isoparse first so offsets and ordering are honored
+    if "T" in s:
+        try:
+            return du_parser.isoparse(s)
+        except Exception:
+            pass
+
+    # 3) Fallbacks: dateparser first, then dateutil.parse with dayfirst according to prefer_dmy
     settings = {
         "DATE_ORDER": "DMY" if prefer_dmy else "MDY",
         "PREFER_DAY_OF_MONTH": "first",
@@ -36,11 +53,16 @@ def parse_fuzzy(q: str, prefer_dmy: bool, assume_current_year: bool, ref_tz: str
         "RETURN_AS_TIMEZONE_AWARE": False,
         "STRICT_PARSING": False,
     }
-    dt = dateparser.parse(q, settings=settings, languages=["en"])
+    dt = dateparser.parse(s, settings=settings, languages=["en"])
     if dt:
+        # Optionally: if assume_current_year and input had no explicit year, pin to current year
+        if assume_current_year and re.search(r"\b\d{4}\b", s) is None:
+            now = datetime.now()
+            dt = dt.replace(year=now.year)
         return dt
+
     try:
-        return du_parser.parse(q, dayfirst=prefer_dmy, yearfirst=False, fuzzy=True)
+        return du_parser.parse(s, dayfirst=prefer_dmy, yearfirst=False, fuzzy=True)
     except Exception:
         return None
 
