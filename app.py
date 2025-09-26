@@ -10,6 +10,7 @@ app = Flask(__name__)
 
 TIME_REGEX = re.compile(r"\b(\d{1,2}:\d{2}(:\d{2})?\s*(am|pm)?)\b", re.I)
 OFFSET_REGEX = re.compile(r"(Z|[+\-]\d{2}:?\d{2})$")
+ISO_DATE_ONLY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 def has_time_part(s: str) -> bool:
     s = s.strip()
